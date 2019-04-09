@@ -1,0 +1,36 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Rscript -e "rmarkdown::render('Lollipop_Functional_Enrichment.Rmd')"
+
+Loading packages
+```{r loading packages}
+library(wrapr)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+rm(list=ls())
+```
+
+
+Reading consensus GO enrichment results
+```{r Reading consensus GO enrichment results}
+consensus_GO_enrich <- fread("/sc/orga/projects/zhangb03a/lei_guo/IFITM3/Corr_Results/Genes_sig_cor_IFITM3_consensus_Ontology.xls")
+
+consensus_GO_enrich_8 <- consensus_GO_enrich[Module == "Consensus_all_8"]
+
+# order GO by P
+consensus_GO_enrich_8$Gene.Category <- factor(consensus_GO_enrich_8$Gene.Category, levels = rev(consensus_GO_enrich_8$Gene.Category))
+```
+
+
+Plotting top 15 enriched terms
+```{r Plotting top 15 enriched terms}
+plot_consensus_GO_enrich_8 <- ggplot(consensus_GO_enrich_8[1:15, ], aes(x=Gene.Category, y=-log10(Corrected_P))) + geom_point(size=3) + geom_segment(aes(x=Gene.Category, xend=Gene.Category, y=0, yend=-log10(Corrected_P))) + theme(axis.text.x = element_text(angle=90)) + xlab("Enriched Pathways") + ylab("-Log10(P)") + coord_flip() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+ggsave("consensus_GO_enrich_8.png", plot_consensus_GO_enrich_8)
+```
+

@@ -1,0 +1,132 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Rscript -e "rmarkdown::render('Violin_Plot.Rmd')"
+
+Loading packages
+```{r loading packages}
+library(wrapr)
+library(data.table)
+library(ggplot2)
+library(ggpubr)
+rm(list=ls())
+```
+
+
+Reading gene expression values for brain regions
+```{r Reading gene expression values for 8 brain regions}
+# BM22
+expr_bm22 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_22.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm22) <- expr_bm22[[1]]
+expr_bm22 <- expr_bm22[, -c(1, 2)]
+# BM36
+expr_bm36 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_36.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm36) <- expr_bm36[[1]]
+expr_bm36 <- expr_bm36[, -c(1, 2)]
+# Mayo TCX
+expr_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.log2CPM.sc_RIN_sex_flowcell_Adj.tsv", data.table = F)
+row.names(expr_mayo_tcx) <- expr_mayo_tcx[[1]]
+expr_mayo_tcx <- expr_mayo_tcx[, -c(1:6)]
+```
+
+
+Reading meta for brain regions
+```{r Reading meta for brain regions}
+#BM22
+meta_bm22 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_22.tsv")
+meta_bm22$ceradsc <- ceradsc[meta_bm22$CERAD]
+#BM36
+meta_bm36 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_36.tsv")
+meta_bm36$ceradsc <- ceradsc[meta_bm36$CERAD]
+# Mayo TCX
+meta_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.meta.tsv")
+meta_mayo_tcx$AgeAtDeath <- as.numeric(gsub("_or_above", "", meta_mayo_tcx$AgeAtDeath))
+colnames(meta_mayo_tcx)[7] <- "AOD"
+meta_mayo_tcx$CERAD <- meta_mayo_tcx$Diagnosis
+meta_mayo_tcx$CERAD <- gsub("AD", "defAD", meta_mayo_tcx$CERAD)
+meta_mayo_tcx$CERAD <- gsub("Control", "NL", meta_mayo_tcx$CERAD)
+```
+
+
+Checking if sample orders are same between expr and meta
+```{r Checking if sample orders are same between expr and meta}
+meta_ls <- list(meta_bm22, meta_bm36, meta_mayo_tcx)
+expr_ls <- list(expr_bm22, expr_bm36, expr_mayo_tcx)
+
+
+mapply(function(x, y) identical(x[[1]], colnames(y)), meta_ls, expr_ls)
+```
+
+
+Subsetting IFITM gene expression for AD and NL
+```{r Subsetting IFITM gene expression for AD and NL}
+# subsetting AD NL
+expr_ad <- mapply(function(x, y) x[, y[CERAD == "defAD"][[1]]], expr_ls, meta_ls, SIMPLIFY = F)
+expr_nl <- mapply(function(x, y) x[, y[CERAD == "NL"][[1]]], expr_ls, meta_ls, SIMPLIFY = F)
+
+# subsetting IFITM
+expr_ad_ifitm <- lapply(expr_ad, function(x) t(x[c("ENSG00000185885", "ENSG00000185201", "ENSG00000142089"), ]))
+expr_nl_ifitm <- lapply(expr_nl, function(x) t(x[c("ENSG00000185885", "ENSG00000185201", "ENSG00000142089"), ]))
+
+# combining expr_ad_ifitm and expr_nl_ifitm
+expr_ifitm <- mapply(rbind, expr_ad_ifitm, expr_nl_ifitm, SIMPLIFY = F)
+# adding CERAD column
+cerad_col <- unlist(mapply(rep, c("AD", "Normal", "AD", "Normal", "AD", "Normal"), c(nrow(expr_ad_ifitm[[1]]),  nrow(expr_nl_ifitm[[1]]), nrow(expr_ad_ifitm[[2]]), nrow(expr_nl_ifitm[[2]]), nrow(expr_ad_ifitm[[3]]), nrow(expr_nl_ifitm[[3]])), SIMPLIFY = F))
+# adding dataset column
+dataset_col <- unlist(mapply(rep, c("BM22", "BM36", "Mayo_TCX"), sapply(expr_ifitm, nrow), SIMPLIFY = F))
+
+# making df
+expr_ifitm <- as.data.frame(do.call(rbind, expr_ifitm))
+expr_ifitm$CERAD <- cerad_col
+expr_ifitm$Dataset <- dataset_col
+expr_ifitm$SampleID <- rownames(expr_ifitm)
+
+# df reshaping
+expr_ifitm_melt <- melt(expr_ifitm, id.vars = c("SampleID", "CERAD", "Dataset"), measure.vars = c("ENSG00000185885", "ENSG00000185201", "ENSG00000142089"))
+setDT(expr_ifitm_melt)
+```
+
+
+Violin plot for ifitm
+```{r Violin plot for ifitm}
+# BM22 IFITM1
+plot_bm22_ifitm1 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185885" & Dataset == "BM22"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA22)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+# BM22 IFITM2
+plot_bm22_ifitm2 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185201" & Dataset == "BM22"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA22)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+# BM22 IFITM3
+plot_bm22_ifitm3 <- ggplot(expr_ifitm_melt[variable == "ENSG00000142089" & Dataset == "BM22"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA22)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+
+
+
+# BM36 IFITM1
+plot_BM36_ifitm1 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185885" & Dataset == "BM36"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA36)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), margin(t = 0, r = 0, b = 0, l = 0, unit = "pt"))
+# BM36 IFITM2
+plot_BM36_ifitm2 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185201" & Dataset == "BM36"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA36)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+# BM36 IFITM3
+plot_BM36_ifitm3 <- ggplot(expr_ifitm_melt[variable == "ENSG00000142089" & Dataset == "BM36"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (BA36)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+
+
+
+# Mayo_TCX IFITM1
+plot_Mayo_TCX_ifitm1 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185885" & Dataset == "Mayo_TCX"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (TCX)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+# Mayo_TCX IFITM2
+plot_Mayo_TCX_ifitm2 <- ggplot(expr_ifitm_melt[variable == "ENSG00000185201" & Dataset == "Mayo_TCX"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (TCX)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+# Mayo_TCX IFITM3
+plot_Mayo_TCX_ifitm3 <- ggplot(expr_ifitm_melt[variable == "ENSG00000142089" & Dataset == "Mayo_TCX"], aes(x=CERAD, y=value)) + geom_violin(trim=FALSE) + geom_dotplot(binaxis='y', stackdir='center', dotsize=1) + stat_summary(geom="pointrange", fun.data = "median_hilow", color="red", size = 1) + xlab("") + ylab("Expression (TCX)") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), axis.line.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank(),axis.title.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.y=element_blank())
+
+
+# combining plots
+# BM22
+plot_BM22 <- ggarrange(plot_bm22_ifitm1, plot_bm22_ifitm2, plot_bm22_ifitm3, labels = c("IFITM1", "IFITM2", "IFITM3"), ncol = 3, nrow = 1, hjust = -1, vjust = 1, font.label = list(size = 12, color = "black", face = "bold", family = NULL))
+# BM36
+plot_BM36 <- ggarrange(plot_BM36_ifitm1, plot_BM36_ifitm2, plot_BM36_ifitm3, labels = c("", "", ""), ncol = 3, nrow = 1, hjust = -1, vjust = 1)
+# Mayo_TCX
+plot_Mayo_TCX <- ggarrange(plot_Mayo_TCX_ifitm1, plot_Mayo_TCX_ifitm2, plot_Mayo_TCX_ifitm3, labels = c("", "", ""), ncol = 3, nrow = 1, hjust = -1, vjust = 1)
+
+# All
+plot_all <- ggarrange(plot_BM22, plot_BM36, plot_Mayo_TCX, ncol = 1, nrow = 3)
+ggsave("IFITM_expression_violin.png", plot_all, width = 8, height = 8)
+```
+

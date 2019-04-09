@@ -1,0 +1,37 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Rscript -e "rmarkdown::render('consensus_network_GO_enrich_analysis.Rmd')"
+```{r Loading packages}
+library(data.table)
+library(ggplot2)
+library(stringr)
+```
+
+
+Reading Enrichment results
+```{r Reading Enrichment results}
+enrich_res <- fread("/sc/orga/projects/zhangb03a/lei_guo/IFITM3/Corr_Results/Genes_sig_cor_IFITM3_consensus_Ontology.xls")
+
+# keeping significant results
+enrich_res_sig <- enrich_res[Corrected_P < 0.05]
+
+# seperating by consensus type
+enrich_res_all <- enrich_res_sig[grepl("Consensus_all_", enrich_res_sig$Module), ]
+enrich_res_all <- enrich_res_all[!duplicated(Gene.Category), ]
+
+enrich_res_pos <- enrich_res_sig[grepl("Consensus_pos_", enrich_res_sig$Module), ]
+enrich_res_pos <- enrich_res_pos[!duplicated(Gene.Category), ]
+
+enrich_res_neg <- enrich_res_sig[grepl("Consensus_neg_", enrich_res_sig$Module), ]
+enrich_res_neg <- enrich_res_neg[!duplicated(Gene.Category), ]
+```
+
+
+Subsetting enriched pathways for the consensus networks
+```{r Subsetting enriched pathways for the consensus networks}
+enrich_res_all_8 <- enrich_res_all[Module == "Consensus_all_8"]
+```

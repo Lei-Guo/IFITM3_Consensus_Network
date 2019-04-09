@@ -1,0 +1,266 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Rscript -e "rmarkdown::render('correlation_analysis_gene_age.Rmd')"
+
+Loading packages
+```{r loading packages}
+library(wrapr)
+library(data.table)
+```
+
+
+Loading functions for matrix-matrix correlation analysis
+```{r loading functions for matrix-matrix correlation analysis}
+# get all indices of a matrix
+# for symetric matrix size is a number otherwise size=(row, col)
+getMatrixIndex = function(size, symmetric=T, diagonal=F)
+{
+   allidx = NULL
+
+   if(symmetric){
+      for(i in c(1:(size[1]-1)) ) {
+         iv = cbind(i, (i+1):size[1])
+         allidx = rbind(allidx, iv)
+      }
+      if(diagonal) {allidx = rbind(allidx, cbind(1:size[1], 1:size[1]) )}
+
+   } else {
+      for(i in c(1:(size[1])) ) {
+         iv = cbind(i, 1:(size[2]))
+         allidx = rbind(allidx, iv)
+      }
+   }
+
+   return (allidx)
+}
+
+
+simpleCorTest=function(x,y){
+signif( cor.test(x,y,method="p",use="p")$p.value ,2) 
+}
+
+# no of rows of amatrix is the same as the length of myvect
+corTest4multivects=function(myvect, amatrix){
+pvals = apply(amatrix, 2, simpleCorTest, y=myvect)
+#cat(pvals[], "\n")
+as.numeric(pvals)
+}
+
+# compute correlation coefficients (spearman, pearson), pvalues of the columns 
+corRhoPvalSpearmanPearson = function (datMatrix) {
+
+  rho=cor(datMatrix, method="pearson", use="complete.obs")
+  pval=apply(datMatrix, 2, corTest4multivects, datMatrix)
+
+  #datMatrixRank = apply(datMatrix, 2, rank)
+  rhoR=cor(datMatrix, method="spearman", use="complete.obs")
+  #pvalR=apply(datMatrixRank, 2, corTest4multivects, xdatMatrixRank)
+
+  midx = getMatrixIndex(size=dim(rho), symmetric=TRUE, diagonal=FALSE)
+  id1  = colnames(datMatrix)[midx[,1]]
+  corMatrix = cbind(colnames(datMatrix)[midx[,1]], colnames(datMatrix)[midx[,2]],
+              signif(rho[midx],3),signif(rhoR[midx],3), signif(pval[midx],3))
+  colnames(corMatrix) = c("TraitA", "TraitB", "rho_pearson", "rho_spearman", "pvalue")
+
+  return (corMatrix)
+
+}
+
+
+# compute correlation coefficients (spearman, pearson), pvalues of the columns 
+corRhoPvalSpearmanPearson_TwoMatrices = function (datMatrix, datMatrix2) {
+
+  rho=cor(datMatrix, datMatrix2, method="pearson", use="complete.obs")
+  pval=apply(datMatrix, 2, corTest4multivects, datMatrix2)
+  pval=t(pval)
+
+  datMatrixRank = apply(datMatrix, 2, rank)
+  datMatrixRank = matrix(as.integer(datMatrixRank), nrow=nrow(datMatrixRank))
+  #datMatrixRankT = t(datMatrixRank)
+
+  datMatrixRank2 = apply(datMatrix2, 2, rank)
+  datMatrixRank2 = matrix(as.integer(datMatrixRank2), nrow=nrow(datMatrixRank2))
+  #datMatrixRankT2 = t(datMatrixRank2)
+
+  rhoR=cor(datMatrixRank, datMatrixRank2, method="pearson", use="complete.obs")
+  pvalR=apply(datMatrixRank, 2, corTest4multivects, datMatrixRank2)
+  pvalR=t(pvalR)
+
+  midx = getMatrixIndex(size=dim(rho), symmetric=FALSE, diagonal=TRUE)
+  id1  = colnames(datMatrix)[midx[,1]]
+  corMatrix = cbind(colnames(datMatrix)[midx[,1]], colnames(datMatrix2)[midx[,2]],
+              signif(rho[midx],3),signif(pval[midx],3), signif(rhoR[midx],3), signif(pvalR[midx],3))
+  colnames(corMatrix) = c("TraitA", "TraitB", "rho_pearson", "pvalue_pearson", "rho_spearman", "pvalue_spearman")
+
+  return (corMatrix)
+
+}
+```
+
+
+Reading gene expression values for brain regions
+```{r Reading gene expression values for 8 brain regions}
+# BM10
+expr_bm10 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_10.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm10) <- expr_bm10[[1]]
+expr_bm10 <- expr_bm10[, -c(1, 2)]
+# BM22
+expr_bm22 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_22.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm22) <- expr_bm22[[1]]
+expr_bm22 <- expr_bm22[, -c(1, 2)]
+# BM36
+expr_bm36 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_36.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm36) <- expr_bm36[[1]]
+expr_bm36 <- expr_bm36[, -c(1, 2)]
+# BM44
+expr_bm44 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.BM_44.PMI_race_sex_RIN_exonicRate_rRnaRate_batch_adj.tsv", data.table = F)
+row.names(expr_bm44) <- expr_bm44[[1]]
+expr_bm44 <- expr_bm44[, -c(1, 2)]
+# ROSMAP
+expr_rosmap <- fread("/sc/orga/projects/zhangb03a/shared/ROSMAP/Synapse/RNAseq/covariates_adjustment/expression.log2FPKM.batch_pmi_msex_RIN_adj.no_outliers.symbol_clean.tsv", data.table = F)
+row.names(expr_rosmap) <- expr_rosmap[[1]]
+expr_rosmap <- expr_rosmap[, -c(1, 2)]
+# Mayo TCX
+expr_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.log2CPM.sc_RIN_sex_flowcell_Adj.tsv", data.table = F)
+row.names(expr_mayo_tcx) <- expr_mayo_tcx[[1]]
+expr_mayo_tcx <- expr_mayo_tcx[, -c(1:6)]
+# Mayo CBE
+expr_mayo_cbe <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.CBE.log2CPM.sc_RIN_sex_flowcell_Adj.tsv", data.table = F)
+row.names(expr_mayo_cbe) <- expr_mayo_cbe[[1]]
+expr_mayo_cbe <- expr_mayo_cbe[, -c(1:6)]
+```
+
+
+Reading meta for brain regions
+```{r Reading meta for brain regions}
+# BM10
+meta_bm10 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_10.tsv")
+#BM22
+meta_bm22 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_22.tsv")
+#BM36
+meta_bm36 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_36.tsv")
+#BM22
+meta_bm44 <- fread("/sc/orga/projects/zhangb03a/shared/msbb-seq/Data/mixed_model_correction_updated/msbb.meta.BM_44.tsv")
+# ROSMAP
+meta_rosmap <- fread("/sc/orga/projects/zhangb03a/shared/ROSMAP/Synapse/RNAseq/covariates_adjustment/expression.log2FPKM.meta.tsv", skip = 1, drop = 1:2)
+colnames(meta_rosmap) <- qc(projid,study,age_first_ad_dx,age_death,age_at_visit_max,pmi,msex,educ,apoe_genotype,race,spanish,braaksc,ad_reagan,cts_mmse30_first_ad_dx,cts_mmse30_lv,ceradsc,cogdx,Rnaseqid,Batch,RINcontinuous,Sampleid,CERAD,Dx.by.braak.cerad)
+meta_rosmap$projid <- paste0("Proj", meta_rosmap$projid)
+colnames(meta_rosmap)[4] <- "AOD"
+meta_rosmap$AOD <- as.numeric(gsub("\\+", "", meta_rosmap$AOD))
+meta_rosmap$CERAD <- gsub("DefiniteAD", "defAD", meta_rosmap$CERAD)
+# Mayo TCX
+meta_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.meta.tsv")
+meta_mayo_tcx$AgeAtDeath <- as.numeric(gsub("_or_above", "", meta_mayo_tcx$AgeAtDeath))
+colnames(meta_mayo_tcx)[7] <- "AOD"
+meta_mayo_tcx$CERAD <- meta_mayo_tcx$Diagnosis
+meta_mayo_tcx$CERAD <- gsub("AD", "defAD", meta_mayo_tcx$CERAD)
+meta_mayo_tcx$CERAD <- gsub("Control", "NL", meta_mayo_tcx$CERAD)
+
+# Mayo CBE
+meta_mayo_cbe <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.CBE.meta.tsv")
+meta_mayo_cbe$AgeAtDeath <- as.numeric(gsub("_or_above", "", meta_mayo_cbe$AgeAtDeath))
+colnames(meta_mayo_cbe)[7] <- "AOD"
+meta_mayo_cbe$CERAD <- meta_mayo_cbe$Diagnosis
+meta_mayo_cbe$CERAD <- gsub("AD", "defAD", meta_mayo_cbe$CERAD)
+meta_mayo_cbe$CERAD <- gsub("Control", "NL", meta_mayo_cbe$CERAD)
+```
+
+
+
+Checking if sample orders are same between expr and meta
+```{r Checking if sample orders are same between expr and meta}
+
+meta_ls <- list(meta_bm10, meta_bm22, meta_bm36, meta_bm44, meta_rosmap, meta_mayo_tcx, meta_mayo_cbe)
+expr_ls <- list(expr_bm10, expr_bm22, expr_bm36, expr_bm44, expr_rosmap, expr_mayo_tcx, expr_mayo_cbe)
+
+
+mapply(function(x, y) identical(x[[1]], colnames(y)), meta_ls, expr_ls)
+```
+
+
+Separating AD and NL
+```{r Separating AD and NL}
+expr_ls_ad <- mapply(function(meta, expr) expr[, meta[CERAD == "defAD"][[1]]], meta_ls, expr_ls, SIMPLIFY = F)
+
+expr_ls_nl <- mapply(function(meta, expr) expr[, meta[CERAD == "NL"][[1]]], meta_ls, expr_ls, SIMPLIFY = F)
+```
+
+
+Correlation analysis between probes and age
+```{r Correlation analysis between probes and age}
+# transposing expr, meta
+expr_ls_t <- lapply(expr_ls, t)
+expr_ls_ad_t <- lapply(expr_ls_ad, t)
+expr_ls_nl_t <- lapply(expr_ls_nl, t)
+
+
+meta_age_ls <- lapply(meta_ls, function(x) x[, "AOD", with = F])
+meta_age_ad_ls <- lapply(meta_ls, function(x) x[CERAD == "defAD"][, "AOD", with = F])
+meta_age_nl_ls <- lapply(meta_ls, function(x) x[CERAD == "NL"][, "AOD", with = F])
+
+
+# cor test for ifitm3 and aod
+cor_res <- mapply(corRhoPvalSpearmanPearson_TwoMatrices, meta_age_ls, expr_ls_t, SIMPLIFY = F)
+cor_res_ad <- mapply(corRhoPvalSpearmanPearson_TwoMatrices, meta_age_ad_ls, expr_ls_ad_t, SIMPLIFY = F)
+cor_res_nl <- mapply(corRhoPvalSpearmanPearson_TwoMatrices, meta_age_nl_ls, expr_ls_nl_t, SIMPLIFY = F)
+```
+
+
+Adjusting P values
+```{r Adjusting P values}
+# adjusting p value for cor_res
+# spearman
+p_adj_spearman <- lapply(cor_res, function(x) p.adjust(as.numeric(x[, "pvalue_spearman"]), method = "BH"))
+#pearson
+p_adj_pearson <- lapply(cor_res, function(x) p.adjust(as.numeric(x[, "pvalue_pearson"]), method = "BH"))
+# adding p.adj column to each result
+cor_res <- lapply(cor_res, as.data.frame)
+# spearman
+cor_res <- mapply(function(x, y) "[<-"(x, "p.adj_spearman", value = y) , cor_res, p_adj_spearman, SIMPLIFY = FALSE)
+#pearson
+cor_res <- mapply(function(x, y) "[<-"(x, "p.adj_pearson", value = y) , cor_res, p_adj_pearson, SIMPLIFY = FALSE)
+
+# adjusting p value for cor_res_ad
+cor_res_ad <- lapply(cor_res_ad, as.data.frame)
+# spearman
+p_adj_spearman_ad <- lapply(cor_res_ad, function(x) p.adjust(as.numeric(x[, "pvalue_spearman"]), method = "BH"))
+#pearson
+p_adj_pearson_ad <- lapply(cor_res_ad, function(x) p.adjust(as.numeric(x[, "pvalue_pearson"]), method = "BH"))
+# adding p.adj column to each result
+# spearman
+cor_res_ad <- mapply(function(x, y) "[<-"(x, "p.adj_spearman", value = y) , cor_res_ad, p_adj_spearman_ad, SIMPLIFY = FALSE)
+#pearson
+cor_res_ad <- mapply(function(x, y) "[<-"(x, "p.adj_pearson", value = y) , cor_res_ad, p_adj_pearson_ad, SIMPLIFY = FALSE)
+
+# adjusting p value for cor_res_nl
+cor_res_nl <- lapply(cor_res_nl, as.data.frame)
+# spearman
+p_adj_spearman_nl <- lapply(cor_res_nl, function(x) p.adjust(as.numeric(x[, "pvalue_spearman"]), method = "BH"))
+#pearson
+p_adj_pearson_nl <- lapply(cor_res_nl, function(x) p.adjust(as.numeric(x[, "pvalue_pearson"]), method = "BH"))
+# adding p.adj column to each result
+# spearman
+cor_res_nl <- mapply(function(x, y) "[<-"(x, "p.adj_spearman", value = y) , cor_res_nl, p_adj_spearman_nl, SIMPLIFY = FALSE)
+#pearson
+cor_res_nl <- mapply(function(x, y) "[<-"(x, "p.adj_pearson", value = y) , cor_res_nl, p_adj_pearson_nl, SIMPLIFY = FALSE)
+```
+
+
+Writing the results
+```{r Writing the results}
+# all smaples
+output_names_all <- paste0("/sc/orga/projects/zhangb03a/lei_guo/IFITM3/Corr_Results/gene_age_cor_test/", c("gene_age_cor_test_all_bm10.csv", "gene_age_cor_test_all_bm22.csv", "gene_age_cor_test_all_bm36.csv", "gene_age_cor_test_all_bm44.csv", "gene_age_cor_test_all_rosmap.csv", "gene_age_cor_test_all_tcx.csv", "gene_age_cor_test_all_cbe.csv"))
+invisible(mapply(fwrite, cor_res, output_names_all))
+
+# AD samples
+output_names_ad <- paste0("/sc/orga/projects/zhangb03a/lei_guo/IFITM3/Corr_Results/gene_age_cor_test/", c("gene_age_cor_test_ad_bm10.csv", "gene_age_cor_test_ad_bm22.csv", "gene_age_cor_test_ad_bm36.csv", "gene_age_cor_test_ad_bm44.csv", "gene_age_cor_test_ad_rosmap.csv", "gene_age_cor_test_ad_tcx.csv", "gene_age_cor_test_ad_cbe.csv"))
+invisible(mapply(fwrite, cor_res_ad, output_names_ad))
+
+#NL samples
+output_names_nl <- paste0("/sc/orga/projects/zhangb03a/lei_guo/IFITM3/Corr_Results/gene_age_cor_test/", c("gene_age_cor_test_nl_bm10.csv", "gene_age_cor_test_nl_bm22.csv", "gene_age_cor_test_nl_bm36.csv", "gene_age_cor_test_nl_bm44.csv", "gene_age_cor_test_nl_rosmap.csv", "gene_age_cor_test_nl_tcx.csv", "gene_age_cor_test_nl_cbe.csv"))
+invisible(mapply(fwrite, cor_res_nl, output_names_nl))
+```
+

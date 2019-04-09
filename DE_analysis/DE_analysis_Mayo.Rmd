@@ -1,0 +1,123 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Rscript -e "rmarkdown::render('DE_analysis_Mayo.Rmd')"
+
+Loading packages
+```{r loading packages}
+library(wrapr)
+library(data.table)
+library(limma)
+library(biomaRt)
+rm(list=ls())
+```
+
+
+Reading gene expression values for brain regions
+```{r Reading gene expression values for brain regions}
+# Mayo TCX
+expr_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.log2CPM.sc_RIN_sex_flowcell_Adj.tsv", data.table = F)
+row.names(expr_mayo_tcx) <- expr_mayo_tcx[[1]]
+expr_mayo_tcx <- expr_mayo_tcx[, -c(1:6)]
+# Mayo CBE
+expr_mayo_cbe <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.CBE.log2CPM.sc_RIN_sex_flowcell_Adj.tsv", data.table = F)
+row.names(expr_mayo_cbe) <- expr_mayo_cbe[[1]]
+expr_mayo_cbe <- expr_mayo_cbe[, -c(1:6)]
+```
+
+
+Reading meta for brain regions
+```{r Reading meta for brain regions}
+# Mayo TCX
+meta_mayo_tcx <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.TCX.meta.tsv")
+meta_mayo_tcx$AgeAtDeath <- as.numeric(gsub("_or_above", "", meta_mayo_tcx$AgeAtDeath))
+colnames(meta_mayo_tcx)[7] <- "AOD"
+meta_mayo_tcx$CERAD <- meta_mayo_tcx$Diagnosis
+meta_mayo_tcx$CERAD <- gsub("AD", "defAD", meta_mayo_tcx$CERAD)
+meta_mayo_tcx$CERAD <- gsub("Control", "NL", meta_mayo_tcx$CERAD)
+# keeping AD/NL only
+meta_mayo_tcx_sub <- meta_mayo_tcx[CERAD == "defAD" | CERAD == "NL"]
+
+# Mayo CBE
+meta_mayo_cbe <- fread("/sc/orga/projects/zhangb03a/shared/Mayo/RNASeq/Reprocessing/normalization/Mayo.CBE.meta.tsv")
+meta_mayo_cbe$AgeAtDeath <- as.numeric(gsub("_or_above", "", meta_mayo_cbe$AgeAtDeath))
+colnames(meta_mayo_cbe)[7] <- "AOD"
+meta_mayo_cbe$CERAD <- meta_mayo_cbe$Diagnosis
+meta_mayo_cbe$CERAD <- gsub("AD", "defAD", meta_mayo_cbe$CERAD)
+meta_mayo_cbe$CERAD <- gsub("Control", "NL", meta_mayo_cbe$CERAD)
+# keeping AD/NL only
+meta_mayo_cbe_sub <- meta_mayo_cbe[CERAD == "defAD" | CERAD == "NL"]
+```
+
+
+Checking if sample orders are same between expr and meta
+```{r Checking if sample orders are same between expr and meta}
+meta_ls <- list(meta_mayo_tcx, meta_mayo_cbe)
+expr_ls <- list(expr_mayo_tcx, expr_mayo_cbe)
+
+
+mapply(function(x, y) identical(x[[1]], colnames(y)), meta_ls, expr_ls)
+```
+
+
+Making gene id to gene symbol annotation table
+```{r Making gene id to gene symbol annotation table}
+geneid_all <- unique(c(rownames(expr_mayo_cbe), rownames(expr_mayo_tcx)))
+
+mart <- useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+
+gene_annot <- getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id",
+"hgnc_symbol"), values = geneid_all, mart= mart)
+```
+
+
+
+DE analysis AD NL
+```{r DE analysis AD NL}
+# subsetting expr_mayo_tcx
+expr_mayo_tcx_sub <- expr_mayo_tcx[, meta_mayo_tcx_sub[[1]]]
+  
+#make design matrix
+design_tcx <- model.matrix(~0 + factor(meta_mayo_tcx_sub$CERAD) +  meta_mayo_tcx_sub$AOD)
+colnames(design_tcx)<- qc(NL, defAD, AOD)
+#make contrast matrix
+contrast_tcx <- makeContrasts(contrasts="defAD-NL", levels=design_tcx)
+
+fit_tcx <- lmFit(expr_mayo_tcx_sub,design_tcx)
+fit_2_tcx <- contrasts.fit(fit_tcx, contrast_tcx)
+fit_2_tcx <- eBayes(fit_2_tcx, trend = T)
+Result_tcx <- topTable(fit_2_tcx, n = Inf, sort = "none")
+Result_tcx$genesymbol <- gene_annot$hgnc_symbol[match(rownames(Result_tcx), gene_annot$ensembl_gene_id)]
+
+summary(decideTests(fit_2_tcx))
+
+
+
+# subsetting expr_mayo_cbe
+expr_mayo_cbe_sub <- expr_mayo_cbe[, meta_mayo_cbe_sub[[1]]]
+  
+#make design matrix
+design_cbe <- model.matrix(~0 + factor(meta_mayo_cbe_sub$CERAD) +  meta_mayo_cbe_sub$AOD)
+colnames(design_cbe)<- qc(NL, defAD, AOD)
+#make contrast matrix
+contrast_cbe <- makeContrasts(contrasts="defAD-NL", levels=design_cbe)
+
+fit_cbe <- lmFit(expr_mayo_cbe_sub,design_cbe)
+fit_2_cbe <- contrasts.fit(fit_cbe, contrast_cbe)
+fit_2_cbe <- eBayes(fit_2_cbe, trend = T)
+Result_cbe <- topTable(fit_2_cbe, n = Inf, sort = "none")
+Result_cbe$genesymbol <- gene_annot$hgnc_symbol[match(rownames(Result_cbe), gene_annot$ensembl_gene_id)]
+
+summary(decideTests(fit_2_cbe))
+```
+
+
+Writing the results
+```{r Writing the results}
+fwrite(Result_tcx, "/sc/orga/projects/zhangb03a/lei_guo/IFITM3/DEGs/DEG_AD-NL_TCX_Mayo.csv", row.names = T)
+fwrite(Result_cbe, "/sc/orga/projects/zhangb03a/lei_guo/IFITM3/DEGs/DEG_AD-NL_CBE_Mayo.csv", row.names = T)
+```
+
